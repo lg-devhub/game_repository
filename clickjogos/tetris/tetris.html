@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>PIXEL TETRIS</title>
+    <style>
+        body { background: #000; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: 'Courier New', Courier, monospace; }
+        canvas { border: 2px solid #fff; box-shadow: 0 0 20px rgba(255,255,255,0.2); }
+        #stats { margin-bottom: 10px; font-size: 20px; }
+        .overlay { position: absolute; background: rgba(0,0,0,0.9); width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; }
+        button { background: transparent; border: 2px solid #00ff00; color: #00ff00; padding: 15px 30px; cursor: pointer; font-family: inherit; font-size: 18px; }
+        button:hover { background: #00ff00; color: #000; }
+    </style>
+</head>
+<body>
+
+    <audio id="tetrisMusic" loop>
+        <source src="pixelmusic.mp3" type="audio/mpeg">
+    </audio>
+
+    <div id="startScreen" class="overlay">
+        <h1 style="color: #00ff00;">TETRIS: PIXEL EDITION</h1>
+        <button onclick="startGame()">INICIAR JOGO</button>
+    </div>
+
+    <div id="stats">LINHAS: <span id="lines">0</span></div>
+    <canvas id="tetris" width="240" height="400"></canvas>
+
+    <script>
+        const canvas = document.getElementById('tetris');
+        const context = canvas.getContext('2d');
+        const music = document.getElementById('tetrisMusic');
+
+        context.scale(20, 20);
+
+        function startGame() {
+            document.getElementById('startScreen').style.display = 'none';
+            
+            // Inicia a música pixelmusic.mp3
+            music.volume = 0.5;
+            music.play().catch(e => console.log("Erro ao carregar áudio:", e));
+            
+            update();
+        }
+
+        // Lógica simplificada do Tetris
+        function arenaSweep() {
+            outer: for (let y = arena.length - 1; y > 0; --y) {
+                for (let x = 0; x < arena[y].length; ++x) {
+                    if (arena[y][x] === 0) continue outer;
+                }
+                const row = arena.splice(y, 1)[0].fill(0);
+                arena.unshift(row);
+                ++y;
+                player.score += 10;
+                document.getElementById('lines').innerText = player.score / 10;
+            }
+        }
+
+        function collide(arena, player) {
+            const [m, o] = [player.matrix, player.pos];
+            for (let y = 0; y < m.length; ++y) {
+                for (let x = 0; x < m[y].length; ++x) {
+                    if (m[y][x] !== 0 && (arena[y + o.y] && arena[y + o.y][x + o.x]) !== 0) return true;
+                }
+            }
+            return false;
+        }
+
+        function createMatrix(w, h) {
+            const matrix = [];
+            while (h--) matrix.push(new Array(w).fill(0));
+            return matrix;
+        }
+
+        function draw() {
+            context.fillStyle = '#000';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            drawMatrix(arena, {x: 0, y: 0});
+            drawMatrix(player.matrix, player.pos);
+        }
+
+        function drawMatrix(matrix, offset) {
+            matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) {
+                        context.fillStyle = '#00ff00';
+                        context.fillRect(x + offset.x, y + offset.y, 1, 1);
+                        context.lineWidth = 0.05;
+                        context.strokeStyle = '#000';
+                        context.strokeRect(x + offset.x, y + offset.y, 1, 1);
+                    }
+                });
+            });
+        }
+
+        function merge(arena, player) {
+            player.matrix.forEach((row, y) => {
+                row.forEach((value, x) => {
+                    if (value !== 0) arena[y + player.pos.y][x + player.pos.x] = value;
+                });
+            });
+        }
+
+        function playerDrop() {
+            player.pos.y++;
+            if (collide(arena, player)) {
+                player.pos.y--;
+                merge(arena, player);
+                playerReset();
+                arenaSweep();
+            }
+            dropCounter = 0;
+        }
+
+        function playerReset() {
+            const pieces = 'ILJOTSZ';
+            player.matrix = createPiece(pieces[pieces.length * Math.random() | 0]);
+            player.pos.y = 0;
+            player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
+            if (collide(arena, player)) {
+                arena.forEach(row => row.fill(0));
+                player.score = 0;
+                document.getElementById('lines').innerText = 0;
+            }
+        }
+
+        function createPiece(type) {
+            if (type === 'T') return [[0, 1, 0], [1, 1, 1], [0, 0, 0]];
+            if (type === 'O') return [[1, 1], [1, 1]];
+            if (type === 'L') return [[0, 0, 1], [1, 1, 1], [0, 0, 0]];
+            if (type === 'I') return [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]];
+            // Outras peças omitidas para brevidade
+            return [[1, 1, 1], [0, 1, 0], [0, 0, 0]];
+        }
+
+        const arena = createMatrix(12, 20);
+        const player = { pos: {x: 5, y: 0}, matrix: createPiece('T'), score: 0 };
+
+        let dropCounter = 0;
+        let dropInterval = 1000;
+        let lastTime = 0;
+
+        function update(time = 0) {
+            const deltaTime = time - lastTime;
+            lastTime = time;
+            dropCounter += deltaTime;
+            if (dropCounter > dropInterval) playerDrop();
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        document.addEventListener('keydown', event => {
+            if (event.keyCode === 37) player.pos.x--;
+            if (event.keyCode === 39) player.pos.x++;
+            if (event.keyCode === 40) playerDrop();
+        });
+
+        playerReset();
+    </script>
+</body>
+</html>

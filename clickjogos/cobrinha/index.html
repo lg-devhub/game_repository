@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Pixel - Full Edition</title>
+    <style>
+        /* --- CSS INTEGRADO --- */
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a1f0a;
+            color: #00ff00;
+            font-family: 'Press Start 2P', system-ui;
+            text-align: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 15px;
+            text-shadow: 0 0 15px #00ff00;
+        }
+
+        .game-container {
+            position: relative;
+            display: inline-block;
+        }
+
+        canvas {
+            border: 8px solid #00ff00;
+            border-radius: 10px;
+            box-shadow: 0 0 30px #00ff00;
+            background: #001100;
+            image-rendering: pixelated;
+        }
+
+        .hud {
+            display: flex;
+            justify-content: space-around;
+            max-width: 640px;
+            margin: 20px auto;
+            font-size: 0.8rem;
+        }
+
+        .hud div {
+            background: #001a00;
+            border: 4px solid #00ff00;
+            padding: 10px 30px;
+            border-radius: 8px;
+        }
+
+        button {
+            margin-top: 15px;
+            background: #001a00;
+            color: #00ff00;
+            border: 5px solid #00ff00;
+            padding: 15px 40px;
+            font-family: 'Press Start 2P';
+            font-size: 1.1rem;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #00ff00;
+            color: #001a00;
+        }
+
+        /* Telas de Overlay */
+        #gameOverScreen, #startOverlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 25, 0, 0.95);
+            border-radius: 10px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            z-index: 100;
+        }
+
+        #gameOverScreen { display: none; }
+
+        #gameOverScreen h2 {
+            color: #ff4444;
+            font-size: 2rem;
+            text-shadow: 0 0 20px #ff0000;
+        }
+
+        .controls {
+            margin-top: 25px;
+            opacity: 0.8;
+            font-size: 0.7rem;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="bgMusic" loop>
+        <source src="pixelmusic.mp3" type="audio/mpeg">
+    </audio>
+
+    <h1>JOGO DA COBRINHA</h1>
+
+    <div class="game-container">
+        <div id="startOverlay">
+            <h2 style="margin-bottom: 20px;">SNAKE PIXEL</h2>
+            <button id="initGameBtn">JOGAR</button>
+        </div>
+
+        <canvas id="gameCanvas" width="640" height="640"></canvas>
+        
+        <div id="gameOverScreen">
+            <h2>GAME OVER</h2>
+            <p>Pontuação: <span id="finalScore">0</span></p>
+            <p>Recorde: <span id="modalHighScore">0</span></p>
+            <button id="restartModal">REINICIAR</button>
+        </div>
+    </div>
+
+    <div class="hud">
+        <div>Pontos: <span id="score">0</span></div>
+        <div>Recorde: <span id="highScore">0</span></div>
+    </div>
+
+    <button id="restartBtn">REINICIAR JOGO</button>
+
+    <p class="controls">
+        Use as setas do teclado ou WASD<br>
+        P = Pausar • A cobra acelera a cada 5 pontos
+    </p>
+
+    <script>
+        /* --- JAVASCRIPT INTEGRADO --- */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const music = document.getElementById('bgMusic');
+        const startOverlay = document.getElementById('startOverlay');
+        const initGameBtn = document.getElementById('initGameBtn');
+
+        const GRID_SIZE = 32;
+        const COLS = canvas.width / GRID_SIZE;
+
+        let snake = [];
+        let dx = 1, dy = 0;
+        let food = {};
+        let score = 0;
+        let highScore = localStorage.getItem('snakeHighScore') || 0;
+        let gameSpeed = 110;
+        let gameInterval = null;
+        let isGameOver = false;
+        let isPaused = false;
+
+        const scoreEl = document.getElementById('score');
+        const highScoreEl = document.getElementById('highScore');
+        const gameOverScreen = document.getElementById('gameOverScreen');
+        const finalScoreEl = document.getElementById('finalScore');
+        const modalHighEl = document.getElementById('modalHighScore');
+
+        // Imagem da maçã
+        const appleImg = new Image();
+        appleImg.src = 'img/maca.png';
+
+        function generateFood() {
+            do {
+                food = {
+                    x: Math.floor(Math.random() * COLS),
+                    y: Math.floor(Math.random() * COLS)
+                };
+            } while (snake.some(segment => segment.x === food.x && segment.y === food.y));
+        }
+
+        function draw() {
+            ctx.fillStyle = '#001100';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Desenha a maçã
+            ctx.drawImage(appleImg, food.x * GRID_SIZE, food.y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+
+            // Desenha a cobra
+            snake.forEach((segment, index) => {
+                if (index === 0) {
+                    ctx.fillStyle = '#00ff88'; // Cabeça
+                } else if (index % 3 === 0) {
+                    ctx.fillStyle = '#ff4444'; // Detalhe no corpo
+                } else {
+                    ctx.fillStyle = '#00cc44'; // Corpo
+                }
+                
+                ctx.fillRect(
+                    segment.x * GRID_SIZE + 2,
+                    segment.y * GRID_SIZE + 2,
+                    GRID_SIZE - 4,
+                    GRID_SIZE - 4
+                );
+            });
+        }
+
+        function update() {
+            if (isGameOver || isPaused) return;
+
+            const head = { 
+                x: snake[0].x + dx, 
+                y: snake[0].y + dy 
+            };
+
+            snake.unshift(head);
+
+            if (head.x === food.x && head.y === food.y) {
+                score++;
+                scoreEl.textContent = score;
+
+                if (score % 5 === 0 && gameSpeed > 60) {
+                    gameSpeed -= 8;
+                    clearInterval(gameInterval);
+                    gameInterval = setInterval(gameLoop, gameSpeed);
+                }
+                generateFood();
+            } else {
+                snake.pop();
+            }
+
+            if (head.x < 0 || head.x >= COLS || head.y < 0 || head.y >= COLS ||
+                snake.slice(1).some(s => s.x === head.x && s.y === head.y)) {
+                endGame();
+            }
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+        }
+
+        function startGame() {
+            // Inicia ou reinicia a música
+            music.currentTime = 0;
+            music.play().catch(e => console.log("Erro som:", e));
+
+            snake = [
+                {x: 10, y: 10},
+                {x: 9, y: 10},
+                {x: 8, y: 10}
+            ];
+            dx = 1; dy = 0;
+            score = 0;
+            gameSpeed = 110;
+            isGameOver = false;
+            isPaused = false;
+
+            scoreEl.textContent = '0';
+            gameOverScreen.style.display = 'none';
+            startOverlay.style.display = 'none';
+
+            generateFood();
+
+            if (gameInterval) clearInterval(gameInterval);
+            gameInterval = setInterval(gameLoop, gameSpeed);
+        }
+
+        function endGame() {
+            isGameOver = true;
+            clearInterval(gameInterval);
+            music.pause(); // Para a música ao morrer
+
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('snakeHighScore', highScore);
+            }
+
+            highScoreEl.textContent = highScore;
+            finalScoreEl.textContent = score;
+            modalHighEl.textContent = highScore;
+            gameOverScreen.style.display = 'flex';
+        }
+
+        // Eventos
+        initGameBtn.addEventListener('click', startGame);
+        document.getElementById('restartBtn').addEventListener('click', startGame);
+        document.getElementById('restartModal').addEventListener('click', startGame);
+
+        document.addEventListener('keydown', e => {
+            if (isGameOver) return;
+            switch (e.key) {
+                case 'ArrowUp': case 'w': case 'W':
+                    if (dy !== 1) { dx = 0; dy = -1; } break;
+                case 'ArrowDown': case 's': case 'S':
+                    if (dy !== -1) { dx = 0; dy = 1; } break;
+                case 'ArrowLeft': case 'a': case 'A':
+                    if (dx !== 1) { dx = -1; dy = 0; } break;
+                case 'ArrowRight': case 'd': case 'D':
+                    if (dx !== -1) { dx = 1; dy = 0; } break;
+                case 'p': case 'P':
+                    isPaused = !isPaused; break;
+            }
+        });
+
+        window.onload = () => {
+            highScoreEl.textContent = highScore;
+        };
+    </script>
+</body>
+</html>

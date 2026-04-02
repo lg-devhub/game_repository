@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>RESONANCE DASH: MP3 EDITION</title>
+    <style>
+        :root { --neon-purple: #bc13fe; --neon-blue: #00f2ff; }
+        body { 
+            margin: 0; background: #050010; color: white; 
+            display: flex; flex-direction: column; align-items: center; 
+            justify-content: center; height: 100vh; overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        #game-container { 
+            position: relative; border: 3px solid var(--neon-purple); 
+            border-radius: 10px; box-shadow: 0 0 30px rgba(188, 19, 254, 0.4); 
+        }
+        canvas { display: block; background: linear-gradient(to bottom, #050010, #130026); cursor: pointer; }
+        
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); display: flex;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 100; text-align: center;
+        }
+        
+        button {
+            padding: 15px 45px; font-size: 22px; background: transparent;
+            color: var(--neon-blue); border: 2px solid var(--neon-blue);
+            cursor: pointer; font-weight: bold; text-transform: uppercase;
+            box-shadow: 0 0 15px var(--neon-blue); transition: 0.3s;
+            letter-spacing: 2px;
+        }
+        button:hover { background: var(--neon-blue); color: #000; box-shadow: 0 0 30px var(--neon-blue); }
+
+        #hud {
+            position: absolute; top: 15px; width: 100%;
+            display: flex; justify-content: space-around;
+            pointer-events: none; color: var(--neon-purple);
+            font-size: 22px; font-weight: bold; text-shadow: 0 0 10px rgba(188, 19, 254, 0.5);
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="bgm" loop>
+        <source src="Resonance.mp3" type="audio/mpeg">
+        Seu navegador não suporta áudio HTML5.
+    </audio>
+
+    <div id="game-container">
+        <div id="start-screen" class="overlay">
+            <h1 style="color: var(--neon-purple); font-size: 50px; margin-bottom: 5px; text-shadow: 0 0 20px var(--neon-purple);">RESONANCE DASH</h1>
+            <p style="color: #666; margin-bottom: 30px;">[ MP3 NATIVO CARREGADO ]</p>
+            <button onclick="startGame()">INICIAR</button>
+        </div>
+
+        <div id="hud">
+            <span>PONTOS: <b id="score">0</b></span>
+            <span>MELHOR: <b id="high-score">0</b></span>
+        </div>
+
+        <div id="game-over" class="overlay" style="display: none;">
+            <h2 style="color: #ff0055; font-size: 40px; margin-bottom: 20px;">SINCRONIA PERDIDA</h2>
+            <button onclick="resetGame()">TENTAR NOVAMENTE</button>
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+<script>
+// --- MOTOR DE ÁUDIO ---
+const music = document.getElementById('bgm');
+music.volume = 0.6; // Volume em 60%
+
+// --- MOTOR DO JOGO ---
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = 900; canvas.height = 450;
+
+let gameRunning = false;
+let score = 0;
+let highScore = localStorage.getItem('gd_high_res') || 0;
+document.getElementById('high-score').innerText = highScore;
+
+let playerObj = { x: 150, y: 350, size: 45, vY: 0, rotation: 0, grounded: false };
+let obstacles = [];
+let frame = 0;
+let speed = 8;
+
+function startGame() {
+    gameRunning = true;
+    document.getElementById('start-screen').style.display = 'none';
+    
+    // Tocar música (O navegador permite agora devido ao clique no botão)
+    music.play().catch(e => console.log("Erro ao tocar áudio:", e));
+    
+    requestAnimationFrame(gameLoop);
+}
+
+function gameLoop() {
+    if(!gameRunning) return;
+    update();
+    draw();
+    requestAnimationFrame(gameLoop);
+}
+
+function update() {
+    frame++;
+    
+    // Física do Player
+    playerObj.vY += 0.9; // Gravidade
+    playerObj.y += playerObj.vY;
+
+    const floorY = canvas.height - 60;
+    if (playerObj.y + playerObj.size > floorY) {
+        playerObj.y = floorY - playerObj.size;
+        playerObj.vY = 0;
+        playerObj.grounded = true;
+        playerObj.rotation = Math.round(playerObj.rotation / 90) * 90;
+    } else {
+        playerObj.grounded = false;
+        playerObj.rotation += 5 + (speed * 0.2); // Roda mais rápido conforme a velocidade
+    }
+
+    // Gerar Obstáculos (Intervalo dinâmico baseado na velocidade)
+    let spawnRate = Math.max(35, 85 - speed);
+    if (frame % Math.floor(spawnRate) === 0) {
+        obstacles.push({ x: canvas.width, w: 40, h: 50 });
+    }
+
+    // Mover Obstáculos
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+        let o = obstacles[i];
+        o.x -= speed;
+
+        // Colisão precisa
+        if (playerObj.x + 35 > o.x && playerObj.x + 10 < o.x + o.w &&
+            playerObj.y + playerObj.size - 5 > floorY - o.h) {
+            gameOver();
+        }
+
+        // Pontuação e limpeza
+        if (o.x < -100) {
+            obstacles.splice(i, 1);
+            score++;
+            document.getElementById('score').innerText = score;
+            if(score % 5 === 0) speed += 0.3; // Aumenta dificuldade gradualmente
+        }
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Chão Neon Roxo
+    ctx.strokeStyle = '#bc13fe';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(0, canvas.height - 60);
+    ctx.lineTo(canvas.width, canvas.height - 60);
+    ctx.stroke();
+
+    // Player Neon Azul
+    ctx.save();
+    ctx.translate(playerObj.x + playerObj.size/2, playerObj.y + playerObj.size/2);
+    ctx.rotate(playerObj.rotation * Math.PI / 180);
+    ctx.strokeStyle = '#00f2ff';
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = '#00f2ff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(-playerObj.size/2, -playerObj.size/2, playerObj.size, playerObj.size);
+    ctx.fillStyle = 'rgba(0, 242, 255, 0.1)';
+    ctx.fillRect(-playerObj.size/2, -playerObj.size/2, playerObj.size, playerObj.size);
+    ctx.restore();
+
+    // Espinhos (Obstáculos)
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ff0055';
+    obstacles.forEach(o => {
+        ctx.beginPath();
+        ctx.moveTo(o.x, canvas.height - 60);
+        ctx.lineTo(o.x + o.w/2, canvas.height - 60 - o.h);
+        ctx.lineTo(o.x + o.w, canvas.height - 60);
+        ctx.fill();
+    });
+}
+
+function gameOver() {
+    gameRunning = false;
+    music.pause(); // Para a música ao morrer
+    document.getElementById('game-over').style.display = 'flex';
+    if(score > highScore) {
+        highScore = score;
+        localStorage.setItem('gd_high_res', highScore);
+        document.getElementById('high-score').innerText = highScore;
+    }
+}
+
+function resetGame() {
+    obstacles = [];
+    score = 0;
+    speed = 8;
+    frame = 0;
+    playerObj.y = 300;
+    playerObj.vY = 0;
+    document.getElementById('score').innerText = "0";
+    document.getElementById('game-over').style.display = 'none';
+    
+    // Reinicia a música do começo
+    music.currentTime = 0;
+    music.play();
+    
+    gameRunning = true;
+    gameLoop();
+}
+
+// Eventos de Pulo
+const jumpAction = () => {
+    if (playerObj.grounded && gameRunning) {
+        playerObj.vY = -14.5; // Força do pulo
+    }
+};
+
+window.addEventListener('keydown', (e) => { 
+    if(e.code === 'Space' || e.code === 'ArrowUp') {
+        e.preventDefault(); // Evita scroll da página
+        jumpAction();
+    }
+});
+canvas.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    jumpAction();
+});
+</script>
+</body>
+</html>
